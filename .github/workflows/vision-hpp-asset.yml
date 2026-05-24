@@ -51,6 +51,16 @@ jobs:
 
           echo '${{ toJson(github.event.client_payload) }}' > payload.json
 
+#      - name: Run Java Payload Processor
+#        run: |
+#
+#          chmod +x gradlew
+#
+#          ./gradlew clean build
+#
+#          java -cp build/classes/java/main \
+#            com.example.webhook.service.HppAssetPayloadProcessor payload.json
+
       - name: Run Java Payload Processor
         run: |
 
@@ -58,8 +68,7 @@ jobs:
 
           ./gradlew clean build
 
-          java -cp build/classes/java/main \
-            com.example.webhook.service.HppAssetPayloadProcessor payload.json
+          ./gradlew processAssetPayload
 
       - name: Commit Changes
         run: |

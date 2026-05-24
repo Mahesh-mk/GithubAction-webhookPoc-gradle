@@ -45,6 +45,17 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
+tasks.register('processAssetPayload', JavaExec) {
+
+    group = 'application'
+
+    classpath = sourceSets.main.runtimeClasspath
+
+    mainClass = 'com.example.webhook.service.HppAssetPayloadProcessor'
+
+    args 'payload.json'
+}
+
 tasks.named('test') {
     useJUnitPlatform()
 }

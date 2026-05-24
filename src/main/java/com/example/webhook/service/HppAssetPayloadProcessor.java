@@ -22,12 +22,12 @@ public class HppAssetPayloadProcessor {
 
         ObjectMapper mapper = new ObjectMapper();
 
-        JsonNode root =
+        JsonNode assetPayload =
                 mapper.readTree(new File(payloadPath));
 
-        validatePayload(root);
+        validatePayload(assetPayload);
 
-        JsonNode files = root.get("files");
+        JsonNode files = assetPayload.get("files");
 
         for (JsonNode file : files) {
 
@@ -45,41 +45,31 @@ public class HppAssetPayloadProcessor {
         System.out.println("Payload processing completed");
     }
 
-    private static void validatePayload(JsonNode root) {
+    private static void validatePayload(JsonNode assetPayload) {
 
-        if (root.get("projectId") == null) {
+        if (assetPayload.get("projectId") == null) {
             throw new RuntimeException("projectId missing");
         }
 
-        if (root.get("files") == null ||
-                root.get("files").isEmpty()) {
+        if (assetPayload.get("files") == null || assetPayload.get("files").isEmpty()) {
 
             throw new RuntimeException("files missing");
         }
     }
 
     private static void validateFilePath(String path) {
-
         if (path.contains("..")) {
             throw new RuntimeException("Invalid file path");
         }
-
-        if (path.startsWith("/")) {
-            throw new RuntimeException("Absolute path not allowed");
-        }
     }
 
-    private static void createFile(
-            String path,
-            String content) throws Exception {
+    private static void createFile(String path, String content) throws Exception {
 
         Path filePath = Paths.get(path);
 
         Files.createDirectories(filePath.getParent());
 
-        try (FileWriter writer =
-                     new FileWriter(path)) {
-
+        try (FileWriter writer = new FileWriter(path)) {
             writer.write(content);
         }
     }
