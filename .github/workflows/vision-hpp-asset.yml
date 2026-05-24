@@ -1,0 +1,102 @@
+name: Vision HPP Asset Publish
+
+on:
+  repository_dispatch:
+    types: [vision_publish]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: publish-${{ github.event.client_payload.projectId }}
+  cancel-in-progress: false
+
+jobs:
+
+  publish:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Validate Payload
+        run: |
+
+          if [ -z "${{ github.event.client_payload.projectId }}" ]; then
+            echo "projectId missing"
+            exit 1
+          fi
+
+      - name: Create Dynamic Branch
+        run: |
+
+          BRANCH=feature/publish-${{ github.event.client_payload.projectId }}-${{ github.run_id }}
+
+          echo "BRANCH_NAME=$BRANCH" >> $GITHUB_ENV
+
+          git checkout -b $BRANCH
+
+      - name: Write Payload To File
+        run: |
+
+          echo '${{ toJson(github.event.client_payload) }}' > payload.json
+
+      - name: Run Java Payload Processor
+        run: |
+
+          chmod +x gradlew
+
+          ./gradlew clean build
+
+          java -cp build/classes/java/main \
+            com.example.webhook.service.HppAssetPayloadProcessor payload.json
+
+      - name: Commit Changes
+        run: |
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add .
+
+          git commit -m "Vision auto publish"
+
+      - name: Push Branch
+        run: |
+
+          RETRY=0
+
+          until [ $RETRY -ge 3 ]
+          do
+
+            git push origin $BRANCH_NAME && break
+
+            RETRY=$((RETRY+1))
+
+            echo "Retry push $RETRY"
+
+            sleep 5
+
+          done
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        run: |
+
+          gh pr create \
+            --base main \
+            --head $BRANCH_NAME \
+            --title "Vision Publish - ${{ github.event.client_payload.projectId }}" \
+            --body "Auto generated PR from Vision for HPP assets"
