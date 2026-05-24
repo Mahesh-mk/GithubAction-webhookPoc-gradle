@@ -1,12 +1,11 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '4.0.6'
+    id 'org.springframework.boot' version '3.4.5'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
 group = 'com.example'
 version = '0.0.1-SNAPSHOT'
-description = 'GithubAction-webhookPoc-gradle'
 
 java {
     toolchain {
@@ -18,40 +17,32 @@ repositories {
     mavenCentral()
 }
 
-ext {
-    set('springCloudGcpVersion', "8.0.3")
-    set('springCloudVersion', "2025.1.1")
-}
-
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-security'
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
-    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
-    implementation 'org.springframework.boot:spring-boot-starter-webservices'
-    implementation 'com.google.cloud:spring-cloud-gcp-starter-storage'
-    implementation 'org.springframework.cloud:spring-cloud-starter'
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.6'
-    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.18.6'
-    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.18.6'
-    compileOnly 'org.projectlombok:lombok'
-    developmentOnly 'org.springframework.boot:spring-boot-devtools'
-    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
-    annotationProcessor 'org.projectlombok:lombok'
-    testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
-    testImplementation 'org.springframework.boot:spring-boot-starter-session-jdbc-test'
-    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
-    testImplementation 'org.springframework.boot:spring-boot-starter-webservices-test'
-    testCompileOnly 'org.projectlombok:lombok'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    testAnnotationProcessor 'org.projectlombok:lombok'
-}
 
-dependencyManagement {
-    imports {
-        mavenBom "com.google.cloud:spring-cloud-gcp-dependencies:${springCloudGcpVersion}"
-        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
-    }
+    // Spring Boot Web
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Jackson JSON
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.6'
+
+    // Jackson XML
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.18.6'
+
+    // Java Time Support
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.18.6'
+
+    // GitHub API
+    implementation 'org.kohsuke:github-api:1.326'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // DevTools
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
 tasks.named('test') {
