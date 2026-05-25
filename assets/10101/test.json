@@ -1,1 +1,18 @@
-{"clientId":"10101"}
+{
+  "button.pay_now": "Pay Now",
+  "button.cancel": "Cancel",
+  "button.back": "Back",
+  "button.continue": "Continue",
+  "label.card_number": "Card Number",
+  "label.cardholder_name": "Cardholder Name",
+  "label.expiry_date": "Expiry Date",
+  "label.cvv": "CVV",
+  "label.amount": "Amount",
+  "message.processing": "Processing your payment...",
+  "message.success": "Payment successful!",
+  "message.error": "Payment failed. Please try again.",
+  "placeholder.card_number": "1234 5678 9012 3456",
+  "placeholder.cardholder_name": "John Doe",
+  "placeholder.expiry_date": "MM/YY",
+  "placeholder.cvv": "123"
+}
