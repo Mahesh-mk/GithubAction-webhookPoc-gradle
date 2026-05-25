@@ -28,12 +28,20 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          cache: gradle
 
       - name: Validate Payload
         run: |
 
           if [ -z "${{ github.event.client_payload.projectId }}" ]; then
-            echo "projectId missing"
+            echo "Id missing"
+            exit 1
+          fi
+    
+          FILES='${{ toJson(github.event.client_payload.files) }}'
+    
+          if [ "$FILES" = "null" ] || [ "$FILES" = "[]" ]; then
+            echo "files missing"
             exit 1
           fi
 
@@ -42,6 +50,8 @@ jobs:
 
           BRANCH=feature/publish-${{ github.event.client_payload.projectId }}-${{ github.run_id }}
 
+          echo "Creating branch: $BRANCH"
+
           echo "BRANCH_NAME=$BRANCH" >> $GITHUB_ENV
 
           git checkout -b $BRANCH
@@ -49,26 +59,18 @@ jobs:
       - name: Write Payload To File
         run: |
 
-          echo '${{ toJson(github.event.client_payload) }}' > payload.json
+          echo "Writing payload to payload.json"
 
-#      - name: Run Java Payload Processor
-#        run: |
-#
-#          chmod +x gradlew
-#
-#          ./gradlew clean build
-#
-#          java -cp build/classes/java/main \
-#            com.example.webhook.service.HppAssetPayloadProcessor payload.json
+          echo '${{ toJson(github.event.client_payload) }}' > payload.json
 
       - name: Run Java Payload Processor
         run: |
 
+          echo "Running HppAssetPayloadProcessor"
+
           chmod +x gradlew
 
-          ./gradlew clean build
-
-          ./gradlew processAssetPayload
+          ./gradlew clean build processAssetPayload
 
       - name: Commit Changes
         run: |
@@ -78,32 +80,85 @@ jobs:
 
           git add .
 
-          git commit -m "Vision auto publish"
+          if git diff --cached --quiet
+          then
+    
+            echo "No changes detected"
+    
+            echo "NO_CHANGES=true" >> $GITHUB_ENV
+    
+          else
+    
+            git commit -m "Vision auto publish - ${{ github.event.client_payload.projectId }}"
+    
+            echo "NO_CHANGES=false" >> $GITHUB_ENV
+    
+          fi
 
       - name: Push Branch
+        if: env.NO_CHANGES == 'false'
         run: |
-
+    
           RETRY=0
-
+          SUCCESS=false
+    
           until [ $RETRY -ge 3 ]
           do
-
-            git push origin $BRANCH_NAME && break
-
+    
+            if git push origin $BRANCH_NAME
+            then
+    
+              SUCCESS=true
+              break
+    
+            fi
+    
             RETRY=$((RETRY+1))
-
+    
             echo "Retry push $RETRY"
-
+    
             sleep 5
-
+    
           done
 
-      - name: Create Pull Request
+          if [ "$SUCCESS" = false ]
+          then
+            echo "Git push failed after retries"
+            exit 1
+          fi
+
+      - name: Check Existing PR
+        if: env.NO_CHANGES == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         run: |
+    
+          EXISTING_PR=$(gh pr list \
+            --head $BRANCH_NAME \
+            --json number \
+            --jq '.[0].number')
+    
+          if [ -n "$EXISTING_PR" ]
+          then
+    
+            echo "PR already exists: $EXISTING_PR"
+            echo "PR_EXISTS=true" >> $GITHUB_ENV
+    
+          else
+            echo "PR_EXISTS=false" >> $GITHUB_ENV
+    
+          fi
 
+      - name: Create Pull Request
+        if: env.NO_CHANGES == 'false' && env.PR_EXISTS == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+        run: |
+    
+          echo "Creating Pull Request"
+    
           gh pr create \
             --base main \
             --head $BRANCH_NAME \
