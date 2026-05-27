@@ -2,8 +2,8 @@
   "files": [
     {
       "content": "{\n  \"button.pay_now\": \"Pay Now\",\n  \"button.cancel\": \"Cancel\",\n  \"button.back\": \"Back\",\n  \"button.continue\": \"Continue\",\n  \"label.card_number\": \"Card Number\",\n  \"label.cardholder_name\": \"Cardholder Name\",\n  \"label.expiry_date\": \"Expiry Date\",\n  \"label.cvv\": \"CVV\",\n  \"label.amount\": \"Amount\",\n  \"message.processing\": \"Processing your payment...\",\n  \"message.success\": \"Payment successful!\",\n  \"message.error\": \"Payment failed. Please try again.\",\n  \"placeholder.card_number\": \"1234 5678 9012 3456\",\n  \"placeholder.cardholder_name\": \"John Doe\",\n  \"placeholder.expiry_date\": \"MM/YY\",\n  \"placeholder.cvv\": \"123\"\n}",
-      "path": "assets/10101/test.json"
+      "path": "assets/10101/translation.json"
     }
   ],
-  "projectId": "CPD-1234"
+  "projectId": "CPD-16710"
 }
