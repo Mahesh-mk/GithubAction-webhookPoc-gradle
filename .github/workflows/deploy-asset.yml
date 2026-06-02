@@ -27,11 +27,3 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Authenticate with Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.workload_identity_provider }}
-          service_account: ${{ secrets.service_account }}
-
-      - name: Setup gcloud SDK
-        uses: google-github-actions/setup-gcloud@v1
