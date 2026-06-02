@@ -1,0 +1,37 @@
+name: Deploy bucket contents
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Select the target environment to sync'
+        required: true
+        type: choice
+        options:
+          - dev
+          - sit
+          - uat
+          - load
+          - prod
+          - demo
+
+jobs:
+  BucketSync:
+    name: BucketSync - ${{ inputs.environment }}
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.workload_identity_provider }}
+          service_account: ${{ secrets.service_account }}
+
+      - name: Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v1
