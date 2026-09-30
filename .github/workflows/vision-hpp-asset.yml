@@ -7,6 +7,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  deployments: read
 
 concurrency:
   group: publish-${{ github.event.client_payload.projectId }}
@@ -20,9 +21,16 @@ jobs:
 
     steps:
 
+      # ---------------------------------------------------------
+      # 1. Checkout Repository
+      # ---------------------------------------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+
+      # ---------------------------------------------------------
+      # 2. Setup Java
+      # ---------------------------------------------------------
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -30,32 +38,244 @@ jobs:
           java-version: 21
           cache: gradle
 
+
+      # ---------------------------------------------------------
+      # 3. Validate Payload
+      # ---------------------------------------------------------
       - name: Validate Payload
         run: |
 
           if [ -z "${{ github.event.client_payload.projectId }}" ]; then
-            echo "Id missing"
-            exit 1
-          fi
-    
-          FILES='${{ toJson(github.event.client_payload.files) }}'
-    
-          if [ "$FILES" = "null" ] || [ "$FILES" = "[]" ]; then
-            echo "files missing"
+            echo "projectId is missing"
             exit 1
           fi
 
+          if [ -z "${{ github.event.client_payload.environment }}" ]; then
+            echo "environment is missing"
+            exit 1
+          fi
+
+          FILES='${{ toJson(github.event.client_payload.files) }}'
+
+          if [ "$FILES" = "null" ] || [ "$FILES" = "[]" ]; then
+            echo "files are missing"
+            exit 1
+          fi
+
+          echo "Payload validation successful"
+
+          echo "Project ID  : ${{ github.event.client_payload.projectId }}"
+          echo "Environment : ${{ github.event.client_payload.environment }}"
+
+
+      # ---------------------------------------------------------
+      # 4. Find Latest Valid Release Branch
+      # ---------------------------------------------------------
+      - name: Find Latest Valid Release Branch
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENVIRONMENT: ${{ github.event.client_payload.environment }}
+
+        run: |
+
+          echo "Finding latest valid release for environment: $ENVIRONMENT"
+
+          REPOSITORY="${{ github.repository }}"
+
+          echo "Repository: $REPOSITORY"
+
+          # -----------------------------------------------------
+          # Fetch deployments for the requested environment
+          # -----------------------------------------------------
+          DEPLOYMENTS=$(gh api \
+            "/repos/$REPOSITORY/deployments?environment=$ENVIRONMENT&per_page=100")
+
+          FOUND=false
+
+          # -----------------------------------------------------
+          # Process deployments newest -> oldest
+          # -----------------------------------------------------
+          while IFS= read -r DEPLOYMENT
+          do
+
+            DEPLOYMENT_ID=$(echo "$DEPLOYMENT" | jq -r '.id')
+            REF=$(echo "$DEPLOYMENT" | jq -r '.ref')
+            SHA=$(echo "$DEPLOYMENT" | jq -r '.sha')
+            CREATED_AT=$(echo "$DEPLOYMENT" | jq -r '.created_at')
+
+            echo ""
+            echo "----------------------------------------"
+            echo "Checking deployment"
+            echo "ID         : $DEPLOYMENT_ID"
+            echo "REF        : $REF"
+            echo "SHA        : $SHA"
+            echo "Created At : $CREATED_AT"
+            echo "----------------------------------------"
+
+
+            # ---------------------------------------------------
+            # Check latest deployment status
+            # ---------------------------------------------------
+            STATUS=$(gh api \
+              "/repos/$REPOSITORY/deployments/$DEPLOYMENT_ID/statuses?per_page=100" |
+              jq -r '
+                sort_by(.created_at)
+                | reverse
+                | .[0].state // empty
+              ')
+
+            echo "Deployment status: $STATUS"
+
+            if [ "$STATUS" != "success" ]; then
+
+              echo "Skipping deployment because status is not success"
+
+              continue
+
+            fi
+
+
+            # ---------------------------------------------------
+            # Find GitHub Release using deployment ref/tag
+            # ---------------------------------------------------
+            RELEASE=$(gh api \
+              "/repos/$REPOSITORY/releases?per_page=100" |
+              jq -c --arg TAG "$REF" '
+                .[]
+                | select(.tag_name == $TAG)
+              ' |
+              head -n 1)
+
+            if [ -z "$RELEASE" ]; then
+
+              echo "No GitHub Release found for tag: $REF"
+
+              continue
+
+            fi
+
+
+            # ---------------------------------------------------
+            # Get target_commitish from GitHub Release
+            # ---------------------------------------------------
+            RELEASE_BRANCH=$(echo "$RELEASE" |
+              jq -r '.target_commitish // empty')
+
+            echo "Release target_commitish: $RELEASE_BRANCH"
+
+
+            if [ -z "$RELEASE_BRANCH" ]; then
+
+              echo "Release does not contain target_commitish"
+
+              continue
+
+            fi
+
+
+            # ---------------------------------------------------
+            # Verify target_commitish is a release branch
+            #
+            # Valid:
+            #   release/BAku
+            #   release/Bali
+            #
+            # Invalid:
+            #   main
+            #   develop
+            #   feature/ABC-123
+            #   bugfix/ABC-123
+            # ---------------------------------------------------
+            if [[ ! "$RELEASE_BRANCH" =~ ^release/[^/]+$ ]]; then
+
+              echo "Skipping because target_commitish is not a release branch: $RELEASE_BRANCH"
+
+              continue
+
+            fi
+
+
+            # ---------------------------------------------------
+            # Verify the exact release branch actually exists
+            # ---------------------------------------------------
+            if ! gh api \
+              "/repos/$REPOSITORY/branches/$RELEASE_BRANCH" \
+              >/dev/null 2>&1; then
+
+              echo "Skipping because release branch does not exist: $RELEASE_BRANCH"
+
+              continue
+
+            fi
+
+
+            # ---------------------------------------------------
+            # Valid release found
+            # ---------------------------------------------------
+            echo ""
+            echo "========================================"
+            echo "Valid release found"
+            echo "========================================"
+            echo "Environment    : $ENVIRONMENT"
+            echo "Deployment ID  : $DEPLOYMENT_ID"
+            echo "Release Tag    : $REF"
+            echo "Release SHA    : $SHA"
+            echo "Release Branch : $RELEASE_BRANCH"
+            echo "========================================"
+
+
+            echo "RELEASE_BRANCH=$RELEASE_BRANCH" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=$REF" >> "$GITHUB_ENV"
+            echo "RELEASE_SHA=$SHA" >> "$GITHUB_ENV"
+
+            FOUND=true
+
+            break
+
+          done < <(
+            echo "$DEPLOYMENTS" |
+            jq -c 'sort_by(.created_at) | reverse | .[]'
+          )
+
+
+          # -----------------------------------------------------
+          # No valid release found
+          # -----------------------------------------------------
+          if [ "$FOUND" != "true" ]; then
+
+            echo ""
+            echo "No valid release deployment found for environment: $ENVIRONMENT"
+
+            exit 1
+
+          fi
+
+
+      # ---------------------------------------------------------
+      # 5. Create Dynamic Branch From Release Branch
+      # ---------------------------------------------------------
       - name: Create Dynamic Branch
         run: |
 
-          BRANCH=feature/publish-${{ github.event.client_payload.projectId }}-${{ github.run_id }}
+          BRANCH="feature/publish-${{ github.event.client_payload.projectId }}-${{ github.run_id }}"
 
-          echo "Creating branch: $BRANCH"
+          echo "Release branch: $RELEASE_BRANCH"
 
-          echo "BRANCH_NAME=$BRANCH" >> $GITHUB_ENV
+          echo "Creating feature branch: $BRANCH"
 
-          git checkout -b $BRANCH
+          # Fetch latest release branch
+          git fetch origin "$RELEASE_BRANCH"
 
+          # Create feature branch from current release branch HEAD
+          git checkout -b "$BRANCH" "origin/$RELEASE_BRANCH"
+
+          echo "BRANCH_NAME=$BRANCH" >> "$GITHUB_ENV"
+
+
+      # ---------------------------------------------------------
+      # 6. Write Payload To File
+      # ---------------------------------------------------------
       - name: Write Payload To File
         run: |
 
@@ -63,6 +283,10 @@ jobs:
 
           echo '${{ toJson(github.event.client_payload) }}' > payload.json
 
+
+      # ---------------------------------------------------------
+      # 7. Run Java Payload Processor
+      # ---------------------------------------------------------
       - name: Run Java Payload Processor
         run: |
 
@@ -72,6 +296,10 @@ jobs:
 
           ./gradlew clean build processAssetPayload
 
+
+      # ---------------------------------------------------------
+      # 8. Commit Changes
+      # ---------------------------------------------------------
       - name: Commit Changes
         run: |
 
@@ -82,85 +310,108 @@ jobs:
 
           if git diff --cached --quiet
           then
-    
+
             echo "No changes detected"
-    
-            echo "NO_CHANGES=true" >> $GITHUB_ENV
-    
+
+            echo "NO_CHANGES=true" >> "$GITHUB_ENV"
+
           else
-    
-            git commit -m "Vision auto publish - ${{ github.event.client_payload.projectId }}"
-    
-            echo "NO_CHANGES=false" >> $GITHUB_ENV
-    
+
+            git commit \
+              -m "Vision auto publish - ${{ github.event.client_payload.projectId }}"
+
+            echo "NO_CHANGES=false" >> "$GITHUB_ENV"
+
           fi
 
+
+      # ---------------------------------------------------------
+      # 9. Push Branch
+      # ---------------------------------------------------------
       - name: Push Branch
         if: env.NO_CHANGES == 'false'
         run: |
-    
+
           RETRY=0
           SUCCESS=false
-    
+
           until [ $RETRY -ge 3 ]
           do
-    
-            if git push origin $BRANCH_NAME
+
+            if git push origin "$BRANCH_NAME"
             then
-    
+
               SUCCESS=true
+
               break
-    
+
             fi
-    
+
             RETRY=$((RETRY+1))
-    
+
             echo "Retry push $RETRY"
-    
+
             sleep 5
-    
+
           done
 
           if [ "$SUCCESS" = false ]
           then
+
             echo "Git push failed after retries"
+
             exit 1
+
           fi
 
+
+      # ---------------------------------------------------------
+      # 10. Check Existing PR
+      # ---------------------------------------------------------
       - name: Check Existing PR
         if: env.NO_CHANGES == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         run: |
-    
+
           EXISTING_PR=$(gh pr list \
-            --head $BRANCH_NAME \
+            --head "$BRANCH_NAME" \
+            --base "$RELEASE_BRANCH" \
             --json number \
             --jq '.[0].number')
-    
+
           if [ -n "$EXISTING_PR" ]
           then
-    
+
             echo "PR already exists: $EXISTING_PR"
-            echo "PR_EXISTS=true" >> $GITHUB_ENV
-    
+
+            echo "PR_EXISTS=true" >> "$GITHUB_ENV"
+
           else
-            echo "PR_EXISTS=false" >> $GITHUB_ENV
-    
+
+            echo "PR_EXISTS=false" >> "$GITHUB_ENV"
+
           fi
 
+
+      # ---------------------------------------------------------
+      # 11. Create Pull Request
+      # ---------------------------------------------------------
       - name: Create Pull Request
         if: env.NO_CHANGES == 'false' && env.PR_EXISTS == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         run: |
-    
+
           echo "Creating Pull Request"
-    
+
+          echo "Source branch : $BRANCH_NAME"
+          echo "Target branch : $RELEASE_BRANCH"
+
           gh pr create \
-            --base main \
-            --head $BRANCH_NAME \
+            --base "$RELEASE_BRANCH" \
+            --head "$BRANCH_NAME" \
             --title "Vision Publish - ${{ github.event.client_payload.projectId }}" \
-            --body "Auto generated PR from Vision for HPP assets"
+            --body "Auto generated PR from Vision for HPP assets."
